@@ -207,7 +207,8 @@ DEFAULT_SCREEN_NAME=hamScreen
 readonly DEFAULT_SCREEN_NAME
 MSG_READ_DELAY_SEC=0.2
 readonly MSG_READ_DELAY_SEC
-
+CONFIG_RESPONSE_WAIT_SEC=7
+readonly CONFIG_RESPONSE_WAIT_SEC
 
 _getTTYBaudRate() {
     local tty
@@ -472,7 +473,7 @@ ham.sendConfig() {
     config=${1:-$(cat "$STATE_TABLE_FILE")}
     cmd='{"config":'"${config}"'}'
 
-    _sendMsg "$cmd" "$TTY" 7
+    _sendMsg "$cmd" "$TTY" "$CONFIG_RESPONSE_WAIT_SEC"
 }
 
 _generate_cmds
