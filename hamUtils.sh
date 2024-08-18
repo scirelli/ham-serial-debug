@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 (return 0 2>/dev/null) && sourced=1 || sourced=0
 [ -n "${HAM_DEBUG:-}" ] && set -o xtrace
+scriptName=$(basename "$0")
+
+msg=$(cat <<-'EOF'
+    You will need to be running bash version >= 4.0 to source this script
+    Execute:
+    declare -p BASH_VERSION
+    to see which version you are running.
+    <TODO: Explain how to change it in terminal settings>
+EOF
+)
+if [ "${BASH_VERSION%%.*}" -lt 4 ]; then
+    echo "$msg"
+    return 0
+fi
 
 if [ -n "${BAUDRATE+x}" ]; then
     echo "You've already sourced this file."
@@ -175,7 +189,12 @@ HAM_CMD_COMMANDS=(
 )
 
 ttyFile='./.tty'
+readonly ttyFile
+
 TTY=
+if [ -e "$ttyFile" ]; then
+    read -r TTY < "$ttyFile"
+fi
 
 DEFAULT_BAUDRATE=9600
 readonly DEFAULT_BAUDRATE
@@ -335,9 +354,6 @@ _findAndOpenHAMConnection() {
     result=
     ttyList=()
 
-    info 'Searching for a HAM...'
-    info 'This may take a few minutes'
-
     _getAllTTYs ttyList
     debug "Ports '${ttyList[*]}'"
     for tty in "${ttyList[@]}"; do
@@ -376,7 +392,7 @@ _generate_cmds() {
     local cmd
     local cleanCmd
     for cmd in "${HAM_GET_COMMANDS[@]}"; do
-        cleanCmd=${cmd//-/_} 
+        cleanCmd=${cmd//-/_}
         cleanCmd=$(capitalize "$cleanCmd")
         eval "ham.get$cleanCmd() {
             ham.send '{\"get\":\"$cmd\"}'
@@ -384,7 +400,7 @@ _generate_cmds() {
     done
 
     for cmd in "${HAM_CMD_COMMANDS[@]}"; do
-        cleanCmd=${cmd//-/_} 
+        cleanCmd=${cmd//-/_}
         cleanCmd=$(capitalize "$cleanCmd")
         eval "ham.cmd$cleanCmd() {
             ham.send '{\"command\":\"$cmd\"}'
@@ -401,7 +417,7 @@ _generate_events() {
         mapfile -t events < <(jq -r '.stateMachine.state_table.any | keys | join("\n")' "$STATE_TABLE_FILE")
     fi
     for event in "${events[@]}"; do
-        cleanEvent=${event//-/_} 
+        cleanEvent=${event//-/_}
         cleanEvent=$(capitalize "$cleanEvent")
         eval "ham.event$cleanEvent() {
             local params
@@ -430,8 +446,8 @@ ham.send() {
     local cmd
     cmd="$1"
 
-    if [ -z "$TTY" ]; then
-        warn "Checking connection to HAM..."
+    if [ -z "$TTY" ] || [ ! -e "$TTY" ] ; then
+        info 'Searching for a HAM...'
         TTY=$(_findAndOpenHAMConnection)
         debug "Found '$TTY'"
         if [ -z "$TTY" ]; then
@@ -459,30 +475,131 @@ ham.sendConfig() {
     _sendMsg "$cmd" "$TTY" 7
 }
 
-# set +a
+_generate_cmds
 
 if [ "$sourced" -eq "0" ]; then
-    info 'Cycling motor'
-    ham.send '{"event":"start-test-motor-cycle-reset"}'
-    info
-    info 'Close session with: screen -X -rmS '"$DEFAULT_SCREEN_NAME" 'quit'
-else
-    msg=$(cat <<-'EOF'
-        You will need to be running bash version >= 4.0 to source this script
-        Execute:
-        declare -p BASH_VERSION
-        to see which version you are running.
-        <TODO: Explain how to change it in terminal settings>
+    helpMsg=$(cat <<-'EOF'
+This script will, once a HAM is found, send a message to the HAM.
+If you know what TTY the HAM is on put it in a file called '.tty' in the same location as this script. That will be the first TTY checked. When a HAM is found a '.tty. file will be created for you.
+If no options is provided a '--motor-cycle' message will be sent.
+
+You can also source this script to have more control over what messages are sent. Soucing will give you a set of functions you can call. It is recommended to use the `activate` script to source into a sub-shell.
+If you provide a `stateTable.json` file in the same location as this script, this script will build a larger set of functions based on events found in the 'any' state.
+See the README.md for more details.
+
+Usage: $scriptName [option]
+
+Options:
+    -m, --motor, --motor-cycle
+        Cycle the motor from back to front, then reset the HAM.
+    -i, --intro, --get-intro
+        Request the intro message.
+    -g, --state, --get-state
+        Request the HAM's current state.
+    -l, logs, get-logs
+        Request HAM logs.
+    -z, space, diskspace
+        Request HAM's diskspace.
+    -r, ram, ramstats
+        Request HAM RAM statistics.
+    -e, --event, --send-event <event name>
+        Send the provided event string. No params will be sent.
+    -s, --set, --set-state <state>
+        Force the HAM into the provided state.
+    -c, --config, --send-config <path to config file>
+        Send a config. This could also be a new state table.
+    -d, --debug
+        Turn on debug output.
+    -h, --help
+        This help message.
 EOF
-)
-    if [ "${BASH_VERSION%%.*}" -lt 4 ]; then
-        echo "$msg"
-        return 0
-    fi
+    )
+
+    TEMP=$(getopt \
+        --options hdmiglzre:s:c: \
+        --longoptions help,debug,motor,motor-cycle,get-state,intro,get-intro,logs,get-logs,space,diskspace,ram,ramstats \
+        --longoptions event:,send-event: \
+        --longoptions set:,set-state: \
+        --longoptions config:,send-config: \
+        --name 'hamUtil' \
+        -- "$@")
+
+    if [ $? != 0 ] ; then err 'Terminating...' ; fi
+
+    eval set -- "$TEMP"
+    # NOTE: Currently only going to allow one command at a time keeping loop for future (and debug) processing.
+    while true; do
+    # 'system-logs'
+    # 'system-logs-ham'
+      case "$1" in
+        -m | --motor | --motor-cycle )
+            echo $(ham.send '{"event":"start-test-motor-cycle-reset"}')
+            shift
+            break
+            ;;
+        -i | --intro | --get-intro )
+            echo $(ham.getIntro)
+            shift
+            break
+            ;;
+        -g | --state | --get-state )
+            echo $(ham.getState)
+            shift
+            break
+            ;;
+        -l | --logs | --get-logs )
+            echo $(ham.getLogs)
+            shift
+            break
+            ;;
+        -z | --space | --diskspace )
+            echo $(ham.getDiskspace)
+            shift
+            break
+            ;;
+        -r | --ram | --ramstats )
+            echo $(ham.getRamstats)
+            shift
+            break
+            ;;
+        -e | --event | --send-event )
+            echo $(ham.send '{"event":"'"$2"'"}')
+            shift 2
+            break
+            ;;
+        -s | --set | --set-state )
+            echo $(ham.setState "$2")
+            shift 2
+            break
+            ;;
+        -c | --config | --send-config )
+            echo $(ham.sendConfig "$(cat "$2")")
+            shift 2
+            break
+            ;;
+
+        -d | --debug )
+            HAM_DEBUG=true
+            info 'Debugging enabled'
+            shift
+            ;;
+        -h | --help )
+            printf '%s\n\n' "$helpMsg"
+            break ;;
+        -- )
+            echo 'Default: Cycling motor'
+            echo $(ham.send '{"event":"start-test-motor-cycle-reset"}')
+            break ;;
+        * )
+            printf '%s\n\n' "$helpMsg"
+            break ;;
+      esac
+    done
+
+else
     set +o errexit
     set +o nounset
     set +o pipefail
-   _generate_cmds
    _generate_events
    _printAllHAMFunctions
 fi
