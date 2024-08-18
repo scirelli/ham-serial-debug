@@ -1,5 +1,5 @@
-# CCK-HAM-Debugging-Scripts
-Small scripts to help debug CCK HAM hardware.
+# HAM-Debugging-Scripts
+Small scripts to help debug HAM hardware.
 
 # hamUtils.sh
 
