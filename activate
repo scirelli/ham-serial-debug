@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+bash --init-file <(cat << 'EOF'
+    . $HOME/.bashrc
+    . hamUtils.sh
+    PS1='(HamUtils) \[\033[1;32m\]$(whoami)@$(hostname): \[\033[0;37m\]$(pwd)$ \[\033[0m\]'
+    export PS1
+EOF
+)
