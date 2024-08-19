@@ -203,7 +203,7 @@ STATE_TABLE_FILE='./stateTable.json'
 readonly STATE_TABLE_FILE
 SIMULATED_PORT=$(2>/dev/null realpath "$HOME/carport" || echo "$HOME/carport")
 readonly SIMULATED_PORT
-MSG_READ_DELAY_SEC=1
+MSG_READ_DELAY_SEC=0.5
 readonly MSG_READ_DELAY_SEC
 CONFIG_RESPONSE_WAIT_SEC=7
 readonly CONFIG_RESPONSE_WAIT_SEC
@@ -250,7 +250,7 @@ _sendMsg() {
     tty=${2:-"$TTY"}
     msgDelay=${3:-"$MSG_READ_DELAY_SEC"}
 
-    { sleep 0.02 ; timeout 1 printf "%s" "$cmd" > "$tty" 2>/dev/null ; } &
+    { sleep 0.02 ; timeout 1 printf "%s" "$cmd" > "$tty" 2>/dev/null || err 'Failed to send message'; } &
     _readData "$tty" "$msgDelay"
 }
 
@@ -268,7 +268,7 @@ _getAllTTYs() {
     local -n tl=$1
     local tty
 
-    #mapfile -t tl < <(find /dev -not -group tty -name 'tty*' 2>/dev/null)
+    mapfile -t tl < <(find /dev -not -group tty -name 'tty*' 2>/dev/null)
     if [ -e "$SIMULATED_PORT" ]; then
         tl=("$SIMULATED_PORT" "${tl[@]}")
     fi
@@ -310,7 +310,7 @@ _readData() {
     if ! read -rs -t "$msgDelay" buf < "$tty"; then
         debug "Read timed out '$tty' '${msgDelay}s'"
     fi
-    printf 'shit: %s' "$buf"
+    printf '%s\n' "$buf"
     set -o errexit
 }
 
@@ -506,6 +506,10 @@ Options:
         Request HAM's diskspace.
     -r, ram, ramstats
         Request HAM RAM statistics.
+    -k, --systemlogs, --get-system-logs
+        Request HAM system logs.
+    -n, --systemlogsham, --get-system-logs-ham
+        Request HAM system logs filtered by the ham unit.
     -e, --event, --send-event <event name>
         Send the provided event string. No params will be sent.
     -s, --set, --set-state <state>
@@ -537,8 +541,8 @@ EOF
     )
 
     TEMP=$(getopt \
-        --options hdmiglzre:s:c: \
-        --longoptions help,debug,motor,motor-cycle,get-state,intro,get-intro,logs,get-logs,space,diskspace,ram,ramstats \
+        --options hdmiglzrkne:s:c: \
+        --longoptions help,debug,motor,motor-cycle,get-state,intro,get-intro,logs,get-logs,space,diskspace,ram,ramstats,systemlogs,system-logs,systemlogsham,system-logs-ham \
         --longoptions event:,send-event: \
         --longoptions set:,set-state: \
         --longoptions config:,send-config: \
@@ -550,8 +554,6 @@ EOF
     eval set -- "$TEMP"
     # NOTE: Currently only going to allow one command at a time keeping loop for future (and debug) processing.
     while true; do
-    # 'system-logs'
-    # 'system-logs-ham'
       case "$1" in
         -m | --motor | --motor-cycle )
             ham.send '{"event":"start-test-motor-cycle-reset"}'
@@ -580,6 +582,16 @@ EOF
             ;;
         -r | --ram | --ramstats )
             ham.getRamstats
+            shift
+            break
+            ;;
+        -k | --systemlogs | --get-system-logs )
+            ham.getSystem_logs
+            shift
+            break
+            ;;
+        -n | --systemlogsham | --get-system-logs-ham )
+            ham.getSystem_logs_ham
             shift
             break
             ;;
