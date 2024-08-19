@@ -203,9 +203,7 @@ STATE_TABLE_FILE='./stateTable.json'
 readonly STATE_TABLE_FILE
 SIMULATED_PORT=$(2>/dev/null realpath "$HOME/carport" || echo "$HOME/carport")
 readonly SIMULATED_PORT
-DEFAULT_SCREEN_NAME=hamScreen
-readonly DEFAULT_SCREEN_NAME
-MSG_READ_DELAY_SEC=0.2
+MSG_READ_DELAY_SEC=1
 readonly MSG_READ_DELAY_SEC
 CONFIG_RESPONSE_WAIT_SEC=7
 readonly CONFIG_RESPONSE_WAIT_SEC
@@ -252,7 +250,7 @@ _sendMsg() {
     tty=${2:-"$TTY"}
     msgDelay=${3:-"$MSG_READ_DELAY_SEC"}
 
-    { sleep 0.02 ; printf "%s" "$cmd" > "$tty" 2>/dev/null ; } &
+    { sleep 0.02 ; timeout 1 printf "%s" "$cmd" > "$tty" 2>/dev/null ; } &
     _readData "$tty" "$msgDelay"
 }
 
@@ -307,8 +305,13 @@ _readData() {
     #   do not echo input coming from a terminal
     # -u fd
     #    read from file descriptor FD instead of the standard input
-    read -rs -t "$msgDelay" buf < "$tty"
-    echo "$buf"
+    # The exit status is greater than 128 if the timeout is exceeded
+    set +o errexit
+    if ! read -rs -t "$msgDelay" buf < "$tty"; then
+        debug "Read timed out '$tty' '${msgDelay}s'"
+    fi
+    printf 'shit: %s' "$buf"
+    set -o errexit
 }
 
 _readJSON() {
@@ -479,13 +482,13 @@ ham.sendConfig() {
 _generate_cmds
 
 if [ "$sourced" -eq "0" ]; then
-    helpMsg=$(cat <<-'EOF'
+    helpMsg=$(cat <<-EOF
 This script will, once a HAM is found, send a message to the HAM.
-If you know what TTY the HAM is on put it in a file called '.tty' in the same location as this script. That will be the first TTY checked. When a HAM is found a '.tty. file will be created for you.
+If you know what TTY the HAM is on put it in a file named '.tty' in the same location as this script. That will be the first TTY checked. When a HAM is found a '.tty. file will be created for you.
 If no options is provided a '--motor-cycle' message will be sent.
 
-You can also source this script to have more control over what messages are sent. Soucing will give you a set of functions you can call. It is recommended to use the `activate` script to source into a sub-shell.
-If you provide a `stateTable.json` file in the same location as this script, this script will build a larger set of functions based on events found in the 'any' state.
+You can also source this script to have more control over what messages are sent. Soucing will give you a set of functions you can call. It is recommended to use the 'activate' script to source into a sub-shell.
+If you provide a 'stateTable.json' file in the same location as this script, this script will build a larger set of functions based on events found in the 'any' state.
 See the README.md for more details.
 
 Usage: $scriptName [option]
@@ -513,6 +516,23 @@ Options:
         Turn on debug output.
     -h, --help
         This help message.
+
+Examples:
+    $scriptName --motor
+    $scriptName --get-intro
+    $scriptName --send-event 'start-test-motor-cycle-reset'
+    $scriptName --set-state 'idle'
+    $scriptName --send-config 'stateTable.json'
+
+stateTable.json
+{
+    "stateMachine": {
+        "initial_state": "Idle",
+        "state_table": {
+            "Idle": {}
+        }
+    }
+}
 EOF
     )
 
@@ -524,8 +544,8 @@ EOF
         --longoptions config:,send-config: \
         --name 'hamUtil' \
         -- "$@")
-
-    if [ $? != 0 ] ; then err 'Terminating...' ; fi
+    errCode=$?
+    if [ $errCode != 0 ] ; then err 'Terminating...' ; fi
 
     eval set -- "$TEMP"
     # NOTE: Currently only going to allow one command at a time keeping loop for future (and debug) processing.
@@ -534,53 +554,53 @@ EOF
     # 'system-logs-ham'
       case "$1" in
         -m | --motor | --motor-cycle )
-            echo $(ham.send '{"event":"start-test-motor-cycle-reset"}')
+            ham.send '{"event":"start-test-motor-cycle-reset"}'
             shift
             break
             ;;
         -i | --intro | --get-intro )
-            echo $(ham.getIntro)
+            ham.getIntro
             shift
             break
             ;;
         -g | --state | --get-state )
-            echo $(ham.getState)
+            ham.getState
             shift
             break
             ;;
         -l | --logs | --get-logs )
-            echo $(ham.getLogs)
+            ham.getLogs
             shift
             break
             ;;
         -z | --space | --diskspace )
-            echo $(ham.getDiskspace)
+            ham.getDiskspace
             shift
             break
             ;;
         -r | --ram | --ramstats )
-            echo $(ham.getRamstats)
+            ham.getRamstats
             shift
             break
             ;;
         -e | --event | --send-event )
-            echo $(ham.send '{"event":"'"$2"'"}')
+            ham.send '{"event":"'"$2"'"}'
             shift 2
             break
             ;;
         -s | --set | --set-state )
-            echo $(ham.setState "$2")
+            ham.setState "$2"
             shift 2
             break
             ;;
         -c | --config | --send-config )
-            echo $(ham.sendConfig "$(cat "$2")")
+            ham.sendConfig "$(cat "$2")"
             shift 2
             break
             ;;
 
         -d | --debug )
-            HAM_DEBUG=true
+            HAM_DEBUG=0
             info 'Debugging enabled'
             shift
             ;;
@@ -589,7 +609,7 @@ EOF
             break ;;
         -- )
             echo 'Default: Cycling motor'
-            echo $(ham.send '{"event":"start-test-motor-cycle-reset"}')
+            ham.send '{"event":"start-test-motor-cycle-reset"}'
             break ;;
         * )
             printf '%s\n\n' "$helpMsg"
