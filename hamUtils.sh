@@ -180,8 +180,8 @@ HAM_GET_COMMANDS=(
     'logs'
     'diskspace'
     'ramstats'
-    'system-logs'
-    'system-logs-ham'
+    #'system-logs'  # This requires more time to pull
+    #'system-logs-ham' # This requires more time to pull
 )
 HAM_CMD_COMMANDS=(
     'shutdown'
@@ -205,6 +205,8 @@ SIMULATED_PORT=$(2>/dev/null realpath "$HOME/carport" || echo "$HOME/carport")
 readonly SIMULATED_PORT
 MSG_READ_DELAY_SEC=0.5
 readonly MSG_READ_DELAY_SEC
+LONG_MSG_READ_DELAY_SEC=60
+readonly LONG_MSG_READ_DELAY_SEC
 CONFIG_RESPONSE_WAIT_SEC=7
 readonly CONFIG_RESPONSE_WAIT_SEC
 
@@ -448,7 +450,9 @@ _printAllHAMFunctions() {
 
 ham.send() {
     local cmd
+    local msgDelay
     cmd="$1"
+    msgDelay=${2:-"$MSG_READ_DELAY_SEC"}
 
     if [ -z "$TTY" ] || [ ! -e "$TTY" ] ; then
         info 'Searching for a HAM...'
@@ -460,7 +464,7 @@ ham.send() {
             echo "$TTY" > "$ttyFile"
         fi
     fi
-    _sendMsg "$cmd"
+    _sendMsg "$cmd" "$TTY" "$msgDelay"
 }
 
 ham.setState() {
@@ -477,6 +481,14 @@ ham.sendConfig() {
     cmd='{"config":'"${config}"'}'
 
     _sendMsg "$cmd" "$TTY" "$CONFIG_RESPONSE_WAIT_SEC"
+}
+
+ham.getSystem_logs() {
+    ham.send '{"get":"system-logs"}' "$LONG_MSG_READ_DELAY_SEC"
+}
+
+ham.getSystem_logs_ham() {
+    ham.send '{"get":"system-logs-ham"}' "$LONG_MSG_READ_DELAY_SEC"
 }
 
 _generate_cmds
@@ -507,9 +519,9 @@ Options:
     -r, ram, ramstats
         Request HAM RAM statistics.
     -k, --systemlogs, --get-system-logs
-        Request HAM system logs.
+        Request HAM system logs. This will take a long time to transfer. Default wait time is ${LONG_MSG_READ_DELAY_SEC} seconds
     -n, --systemlogsham, --get-system-logs-ham
-        Request HAM system logs filtered by the ham unit.
+        Request HAM system logs filtered by the ham unit. This will take a long time to transfer. Default wait time is ${LONG_MSG_READ_DELAY_SEC} seconds
     -e, --event, --send-event <event name>
         Send the provided event string. No params will be sent.
     -s, --set, --set-state <state>
